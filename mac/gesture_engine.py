@@ -1,10 +1,12 @@
 """
 FisTransfer — Gesture Engine
 ==============================
-Detects "Grab and Swipe" gestures using MediaPipe HandLandmarker (Tasks API).
+Detects TWO gestures using MediaPipe HandLandmarker (Tasks API):
 
-Grab:  Thumb tip (LM4) close to Index tip (LM8), normalized by hand size.
-Swipe: Simple Moving Average of palm X-coordinate velocity.
+  GRAB:  Closed fist — thumb tip (LM4) close to index tip (LM8)
+  CATCH: Open palm  — thumb tip (LM4) far from index tip (LM8)
+
+The same engine runs on BOTH Mac and Windows.
 """
 
 import math
@@ -27,9 +29,9 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from config import (
     GRAB_THRESHOLD,
+    CATCH_THRESHOLD,
     SWIPE_VELOCITY_THRESHOLD,
     SMA_WINDOW,
-    SWIPE_DIRECTION,
     COOLDOWN_SECONDS,
     ENABLE_PROFILING,
 )
@@ -44,24 +46,35 @@ _HAND_CONNECTIONS = HandLandmarksConnections.HAND_CONNECTIONS
 
 
 class GestureEngine:
-    """Detects a 'grab + swipe' gesture from webcam frames."""
+    """Detects grab (closed fist) and catch (open palm) gestures."""
 
     def __init__(self):
         # ── MediaPipe Tasks API setup ────────────────────────────────────
         options = HandLandmarkerOptions(
             base_options=BaseOptions(model_asset_path=_MODEL_PATH),
             running_mode=RunningMode.VIDEO,
-            num_hands=1,                         # Single hand = less CPU
+            num_hands=1,
             min_hand_detection_confidence=0.7,
             min_tracking_confidence=0.6,
         )
         self.detector = HandLandmarker.create_from_options(options)
-        self._frame_ts = 0  # Monotonic timestamp for VIDEO mode
+        self._frame_ts = 0
 
         # ── State ────────────────────────────────────────────────────────
         self.is_grabbed = False
+        self.is_open = False
         self.x_history = deque(maxlen=SMA_WINDOW)
         self.last_trigger_time = 0.0
+
+        # ── Grab hold tracking ───────────────────────────────────────────
+        self._grab_start_time = None
+        self._grab_hold_required = 0.5  # Must hold grab for 0.5s
+        self.grab_confirmed = False     # True when grab held long enough
+
+        # ── Catch tracking ───────────────────────────────────────────────
+        self._catch_start_time = None
+        self._catch_hold_required = 0.3  # Must show open palm for 0.3s
+        self.catch_confirmed = False
 
     # ── Landmark helpers ─────────────────────────────────────────────────
 
@@ -75,46 +88,61 @@ class GestureEngine:
         )
 
     def _hand_size(self, landmarks):
-        """Reference distance: wrist (LM0) → middle-finger MCP (LM9).
-        Used to normalize grab distance so it works at any webcam distance."""
+        """Reference distance: wrist (LM0) → middle-finger MCP (LM9)."""
         return self._distance(landmarks[0], landmarks[9])
 
     def _grab_distance(self, landmarks):
-        """Distance between thumb tip (LM4) and index tip (LM8), normalized."""
+        """Normalized distance between thumb tip (LM4) and index tip (LM8)."""
         raw = self._distance(landmarks[4], landmarks[8])
         size = self._hand_size(landmarks)
         if size < 1e-6:
-            return 1.0  # Avoid division by zero
+            return 1.0
         return raw / size
 
+    def _all_fingers_extended(self, landmarks):
+        """Check if all fingers are extended (open palm).
+        Compares each fingertip Y with its MCP joint Y.
+        In image coords, lower Y = higher on screen."""
+        # Finger tip and MCP landmark indices
+        tips = [8, 12, 16, 20]     # Index, Middle, Ring, Pinky tips
+        mcps = [5, 9, 13, 17]      # Their MCP joints
+
+        extended_count = 0
+        for tip_idx, mcp_idx in zip(tips, mcps):
+            # Tip should be above (lower Y) the MCP for extended finger
+            if landmarks[tip_idx].y < landmarks[mcp_idx].y:
+                extended_count += 1
+
+        # Thumb: compare x distance from wrist (works for both hands)
+        thumb_tip = landmarks[4]
+        thumb_mcp = landmarks[2]
+        if abs(thumb_tip.x - landmarks[0].x) > abs(thumb_mcp.x - landmarks[0].x):
+            extended_count += 1
+
+        return extended_count >= 4  # At least 4 of 5 fingers extended
+
     def _palm_x(self, landmarks):
-        """X-coordinate of the palm center (LM9 — middle-finger MCP)."""
+        """X-coordinate of the palm center (LM9)."""
         return landmarks[9].x
 
     # ── Velocity via SMA ─────────────────────────────────────────────────
 
     def _compute_velocity(self):
-        """Simple Moving Average velocity over the X-position history."""
         if len(self.x_history) < 3:
             return 0.0
         return (self.x_history[-1] - self.x_history[0]) / len(self.x_history)
 
-    # ── Draw landmarks on frame ──────────────────────────────────────────
+    # ── Draw landmarks ───────────────────────────────────────────────────
 
     @staticmethod
-    def _draw_landmarks(frame, landmarks):
-        """Draw hand landmarks and connections onto a BGR frame."""
+    def _draw_landmarks(frame, landmarks, color=(0, 255, 0)):
         h, w, _ = frame.shape
-
-        # Draw connections
         for conn in _HAND_CONNECTIONS:
             start = landmarks[conn.start]
             end = landmarks[conn.end]
             pt1 = (int(start.x * w), int(start.y * h))
             pt2 = (int(end.x * w), int(end.y * h))
-            cv2.line(frame, pt1, pt2, (0, 255, 0), 2)
-
-        # Draw landmark points
+            cv2.line(frame, pt1, pt2, color, 2)
         for lm in landmarks:
             cx, cy = int(lm.x * w), int(lm.y * h)
             cv2.circle(frame, (cx, cy), 5, (255, 0, 0), -1)
@@ -127,59 +155,110 @@ class GestureEngine:
 
         Returns
         -------
-        (triggered: bool, annotated_frame: ndarray, debug_info: dict)
+        result : dict with keys:
+            'grab_confirmed' : bool — held grab for required duration
+            'catch_confirmed': bool — held open palm for required duration
+            'is_grabbed'     : bool — currently in grab state
+            'is_open'        : bool — currently showing open palm
+            'grab_dist'      : float — normalized thumb-index distance
+            'velocity'       : float — palm X velocity
+            'hand_detected'  : bool
+        annotated_frame : ndarray
         """
-        triggered = False
-        debug = {
-            "grabbed": False,
+        result = {
+            "grab_confirmed": False,
+            "catch_confirmed": False,
+            "is_grabbed": False,
+            "is_open": False,
             "grab_dist": None,
             "velocity": 0.0,
             "hand_detected": False,
         }
 
-        # Convert BGR → RGB for MediaPipe
         rgb = cv2.cvtColor(bgr_frame, cv2.COLOR_BGR2RGB)
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-
-        # Detect with monotonically increasing timestamp
-        self._frame_ts += 33  # ~30 FPS in milliseconds
+        self._frame_ts += 33
         results = self.detector.detect_for_video(mp_image, self._frame_ts)
 
+        now = time.time()
+
         if results.hand_landmarks:
-            lm = results.hand_landmarks[0]  # First (only) hand
-            debug["hand_detected"] = True
+            lm = results.hand_landmarks[0]
+            result["hand_detected"] = True
 
-            # ── Draw landmarks on frame ──────────────────────────────
-            self._draw_landmarks(bgr_frame, lm)
-
-            # ── Grab detection ───────────────────────────────────────
+            # ── Grab distance ────────────────────────────────────────
             grab_dist = self._grab_distance(lm)
-            self.is_grabbed = grab_dist < GRAB_THRESHOLD
-            debug["grabbed"] = self.is_grabbed
-            debug["grab_dist"] = round(grab_dist, 4)
+            result["grab_dist"] = round(grab_dist, 4)
 
-            # ── Track palm X for velocity ────────────────────────────
+            # ── Detect GRAB (closed fist) ────────────────────────────
+            self.is_grabbed = grab_dist < GRAB_THRESHOLD
+            result["is_grabbed"] = self.is_grabbed
+
+            if self.is_grabbed:
+                if self._grab_start_time is None:
+                    self._grab_start_time = now
+                elif (now - self._grab_start_time) >= self._grab_hold_required:
+                    if (now - self.last_trigger_time) > COOLDOWN_SECONDS:
+                        self.grab_confirmed = True
+                        result["grab_confirmed"] = True
+            else:
+                self._grab_start_time = None
+                self.grab_confirmed = False
+
+            # ── Detect CATCH (open palm) ─────────────────────────────
+            fingers_open = self._all_fingers_extended(lm)
+            self.is_open = fingers_open and grab_dist > CATCH_THRESHOLD
+            result["is_open"] = self.is_open
+
+            if self.is_open:
+                if self._catch_start_time is None:
+                    self._catch_start_time = now
+                elif (now - self._catch_start_time) >= self._catch_hold_required:
+                    if (now - self.last_trigger_time) > COOLDOWN_SECONDS:
+                        self.catch_confirmed = True
+                        result["catch_confirmed"] = True
+            else:
+                self._catch_start_time = None
+                self.catch_confirmed = False
+
+            # ── Velocity ─────────────────────────────────────────────
             self.x_history.append(self._palm_x(lm))
             velocity = self._compute_velocity()
-            debug["velocity"] = round(velocity, 5)
+            result["velocity"] = round(velocity, 5)
 
-            # ── Check trigger condition ──────────────────────────────
-            now = time.time()
-            cooldown_ok = (now - self.last_trigger_time) > COOLDOWN_SECONDS
-
-            if self.is_grabbed and cooldown_ok:
-                if SWIPE_DIRECTION == "left" and velocity < -SWIPE_VELOCITY_THRESHOLD:
-                    triggered = True
-                    self.last_trigger_time = now
-                elif SWIPE_DIRECTION == "right" and velocity > SWIPE_VELOCITY_THRESHOLD:
-                    triggered = True
-                    self.last_trigger_time = now
+            # ── Draw ─────────────────────────────────────────────────
+            if self.is_grabbed:
+                draw_color = (0, 0, 255)       # Red = grabbed
+            elif self.is_open:
+                draw_color = (255, 200, 0)     # Cyan = open/catching
+            else:
+                draw_color = (0, 255, 0)       # Green = neutral
+            self._draw_landmarks(bgr_frame, lm, draw_color)
 
             # ── Visual feedback ──────────────────────────────────────
-            color = (0, 0, 255) if self.is_grabbed else (0, 255, 0)
-            status = "GRABBED" if self.is_grabbed else "OPEN"
+            if self.is_grabbed:
+                status = "GRABBED"
+                hold_pct = ""
+                if self._grab_start_time:
+                    elapsed = min(now - self._grab_start_time, self._grab_hold_required)
+                    pct = int(elapsed / self._grab_hold_required * 100)
+                    hold_pct = f" [{pct}%]"
+                color = (0, 0, 255)
+            elif self.is_open:
+                status = "OPEN PALM"
+                hold_pct = ""
+                if self._catch_start_time:
+                    elapsed = min(now - self._catch_start_time, self._catch_hold_required)
+                    pct = int(elapsed / self._catch_hold_required * 100)
+                    hold_pct = f" [{pct}%]"
+                color = (255, 200, 0)
+            else:
+                status = "NEUTRAL"
+                hold_pct = ""
+                color = (0, 255, 0)
+
             cv2.putText(
-                bgr_frame, f"{status} | dist={grab_dist:.3f}",
+                bgr_frame, f"{status}{hold_pct} | dist={grab_dist:.3f}",
                 (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2,
             )
             cv2.putText(
@@ -187,18 +266,34 @@ class GestureEngine:
                 (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 200, 0), 2,
             )
 
-            if triggered:
+            if result["grab_confirmed"]:
                 cv2.putText(
-                    bgr_frame, ">>> THROW DETECTED <<<",
-                    (10, 100), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 255), 3,
+                    bgr_frame, ">>> GRAB READY — waiting for catch <<<",
+                    (10, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2,
+                )
+            if result["catch_confirmed"]:
+                cv2.putText(
+                    bgr_frame, ">>> CATCH! Receiving... <<<",
+                    (10, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2,
                 )
         else:
-            # No hand: clear history
             self.x_history.clear()
             self.is_grabbed = False
+            self.is_open = False
+            self._grab_start_time = None
+            self._catch_start_time = None
+            self.grab_confirmed = False
+            self.catch_confirmed = False
 
-        return triggered, bgr_frame, debug
+        return result, bgr_frame
+
+    def mark_transfer_complete(self):
+        """Call after a successful transfer to reset cooldown."""
+        self.last_trigger_time = time.time()
+        self.grab_confirmed = False
+        self.catch_confirmed = False
+        self._grab_start_time = None
+        self._catch_start_time = None
 
     def release(self):
-        """Release MediaPipe resources."""
         self.detector.close()

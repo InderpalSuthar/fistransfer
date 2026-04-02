@@ -1,15 +1,14 @@
 """
-FisTransfer — Gesture Test (Sprint 2)
-========================================
-Runs the webcam and gesture engine to tune thresholds.
-Logs gesture events to the console.
+FisTransfer — Gesture Test (Both GRAB + CATCH)
+=================================================
+Tests both gesture types on a single machine.
 
 Usage:
     python tests/test_gesture.py
 
 Controls:
     q — Quit
-    g — Print current grab threshold info
+    g — Print debug info
 """
 
 import sys
@@ -20,21 +19,22 @@ import cv2
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from mac.gesture_engine import GestureEngine
-from config import GRAB_THRESHOLD, SWIPE_VELOCITY_THRESHOLD, SWIPE_DIRECTION
+from config import GRAB_THRESHOLD, CATCH_THRESHOLD
 
 
 def main():
     print("=" * 60)
-    print("  FisTransfer — Gesture Tuning Mode")
+    print("  FisTransfer — Gesture Test (GRAB + CATCH)")
     print("=" * 60)
     print()
-    print(f"  Grab threshold:     {GRAB_THRESHOLD}")
-    print(f"  Swipe threshold:    {SWIPE_VELOCITY_THRESHOLD}")
-    print(f"  Swipe direction:    {SWIPE_DIRECTION}")
+    print(f"  Grab threshold:  {GRAB_THRESHOLD} (closed fist)")
+    print(f"  Catch threshold: {CATCH_THRESHOLD} (open palm)")
     print()
-    print("  Controls:")
-    print("    q — Quit")
-    print("    g — Print debug info")
+    print("  Try these gestures:")
+    print("    🤜 Close your fist   → should show GRABBED")
+    print("    🖐  Open your palm    → should show OPEN PALM")
+    print("    ✊ Hold fist 0.5s    → should show GRAB READY")
+    print("    🖐  Hold palm 0.3s   → should show CATCH!")
     print()
 
     engine = GestureEngine()
@@ -47,7 +47,8 @@ def main():
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
-    throw_count = 0
+    grab_count = 0
+    catch_count = 0
     fps_start = time.time()
     frame_count = 0
     current_fps = 0.0
@@ -59,7 +60,7 @@ def main():
                 break
 
             frame = cv2.flip(frame, 1)
-            triggered, annotated, debug = engine.process_frame(frame)
+            result, annotated = engine.process_frame(frame)
 
             # FPS counter
             frame_count += 1
@@ -71,12 +72,25 @@ def main():
 
             cv2.putText(
                 annotated, f"FPS: {current_fps:.0f}",
-                (500, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 255, 100), 2,
+                (530, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 255, 100), 2,
             )
 
-            if triggered:
-                throw_count += 1
-                print(f"  🤜 THROW #{throw_count} DETECTED! {debug}")
+            # Count events
+            if result["grab_confirmed"]:
+                grab_count += 1
+                print(f"  🤜 GRAB #{grab_count} CONFIRMED!")
+                engine.mark_transfer_complete()
+
+            if result["catch_confirmed"]:
+                catch_count += 1
+                print(f"  🖐 CATCH #{catch_count} CONFIRMED!")
+                engine.mark_transfer_complete()
+
+            # Stats bar
+            cv2.putText(
+                annotated, f"Grabs: {grab_count} | Catches: {catch_count}",
+                (10, 470), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1,
+            )
 
             cv2.imshow("FisTransfer — Gesture Test", annotated)
 
@@ -84,7 +98,7 @@ def main():
             if key == ord("q"):
                 break
             elif key == ord("g"):
-                print(f"  [Debug] {debug}")
+                print(f"  [Debug] {result}")
 
     except KeyboardInterrupt:
         pass
@@ -93,7 +107,7 @@ def main():
         cv2.destroyAllWindows()
         engine.release()
 
-    print(f"\n  Total throws detected: {throw_count}")
+    print(f"\n  Grabs: {grab_count} | Catches: {catch_count}")
 
 
 if __name__ == "__main__":
