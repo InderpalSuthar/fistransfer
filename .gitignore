@@ -1,0 +1,13 @@
+# FisTransfer
+fistransfer_env/
+models/*.task
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.DS_Store
+*.jpg
+*.png
+*.bmp
