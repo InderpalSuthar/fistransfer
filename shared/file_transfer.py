@@ -187,8 +187,55 @@ class FileReceiver:
             self.last_received = str(out_path)
             print(f"  ✅ Saved: {out_path}")
             print(f"     {filesize/1024/1024:.1f} MB in {(t1-t0)*1000:.0f}ms ({speed_mbps:.1f} MB/s)")
+
+            # ── Auto Handle Post-Transfer ──
+            if is_zipped:
+                import zipfile
+                extract_dir = self.save_dir / original_name
+                # Avoid folder name collisions
+                base = original_name
+                counter = 1
+                while extract_dir.exists():
+                    extract_dir = self.save_dir / f"{base}_{counter}"
+                    counter += 1
+                
+                print(f"  📂 Extracting to {extract_dir} ...")
+                try:
+                    with zipfile.ZipFile(out_path, 'r') as zip_ref:
+                        zip_ref.extractall(extract_dir)
+                    os.remove(out_path)  # Keep it clean
+                    self._open_in_os(extract_dir)
+                except Exception as e:
+                    print(f"  ❌ Extraction failed: {e}")
+            else:
+                ext = out_path.suffix.lower()
+                if ext in [".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp"]:
+                    import multiprocessing
+                    from shared.glass_viewer import show_glass_window
+                    print(f"  ✨ Spawning Glass Viewer")
+                    p = multiprocessing.Process(target=show_glass_window, args=(str(out_path),))
+                    p.daemon = True
+                    p.start()
+                else:
+                    # Open standard files immediately
+                    self._open_in_os(out_path)
+
         else:
             print(f"  ❌ Incomplete: got {received}/{filesize} bytes")
+
+    def _open_in_os(self, path):
+        """Open a path natively using the OS shell."""
+        import subprocess
+        import sys
+        try:
+            if sys.platform == "win32":
+                os.startfile(str(path))
+            elif sys.platform == "darwin":
+                subprocess.run(["open", str(path)])
+            else:
+                subprocess.run(["xdg-open", str(path)])
+        except Exception as e:
+            print(f"  ⚠️ Could not open path automatically: {e}")
 
     def _recv_exact(self, conn, size):
         data = b""

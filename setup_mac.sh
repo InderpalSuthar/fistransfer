@@ -41,7 +41,7 @@ echo "[3/5] Installing dependencies..."
 source fistransfer_env/bin/activate
 
 pip install --upgrade pip -q
-pip install mediapipe opencv-python numpy mss pyautogui -q
+pip install mediapipe opencv-python numpy mss pyautogui pillow -q
 
 echo "       All packages installed!"
 echo ""

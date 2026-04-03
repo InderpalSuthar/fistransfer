@@ -9,6 +9,7 @@ Usage:
 """
 
 import sys, os
+import multiprocessing
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from shared.app_core import FisTransferApp
@@ -48,4 +49,5 @@ def main():
 
 
 if __name__ == "__main__":
+    multiprocessing.freeze_support()
     main()

@@ -364,8 +364,6 @@ class FisTransferApp:
                 elif key == ord("m"):
                     if self._cursor:
                         self._cursor.toggle()
-                elif self._display_original is not None:
-                    self._handle_save_key(key)
 
         except KeyboardInterrupt:
             print(f"\n[{self.side}] Interrupted.")
@@ -522,98 +520,31 @@ class FisTransferApp:
                 self.gesture.mark_transfer_complete()
 
     def _show_received_image(self):
-        """Display received image with save options overlay."""
+        """Auto-save received screenshot and trigger the glassmorphic viewer."""
         with self._image_lock:
             if self._received_image is None:
                 return
             original = self._received_image.copy()
             self._received_image = None
 
-        # Store full-res original for saving
-        self._display_original = original
-
-        h, w = original.shape[:2]
-        scale = min(1280 / w, 720 / h, 1.0)
-        if scale < 1.0:
-            display = cv2.resize(original, (int(w * scale), int(h * scale)))
-        else:
-            display = original.copy()
-
-        # Add save options overlay
-        self._add_save_overlay(display, w, h)
-        self._display_image = display
-
-        cv2.imshow(self._caught_window, display)
-        print(f"[{self.side}] 📺 Screenshot caught! ({w}×{h})")
-        print(f"[{self.side}] 💡 Press: s=Desktop  d=Downloads  p=PNG  c=Here  Esc=Dismiss")
-
-    def _add_save_overlay(self, display, orig_w, orig_h):
-        """Draw save options bar at the bottom of the display image."""
-        dh, dw = display.shape[:2]
-        bar_h = 50
-        y_start = dh - bar_h
-
-        # Semi-transparent dark bar
-        overlay = display.copy()
-        cv2.rectangle(overlay, (0, y_start), (dw, dh), (20, 20, 30), -1)
-        cv2.addWeighted(overlay, 0.85, display, 0.15, 0, display)
-
-        # Options text
-        cv2.putText(display, f"[S] Desktop  [D] Downloads  [P] PNG  [C] Here  [Esc] Dismiss",
-                    (15, y_start + 22), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (180, 220, 255), 1)
-        cv2.putText(display, f"{orig_w}x{orig_h} | Saved: {self._save_count}",
-                    (15, y_start + 42), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (140, 140, 140), 1)
-
-    def _handle_save_key(self, key):
-        """Handle save-related key presses."""
-        if key == 27:  # Esc — dismiss
-            cv2.destroyWindow(self._caught_window)
-            self._display_original = None
-            self._display_image = None
-            print(f"[{self.side}] Dismissed.")
-
-        elif key == ord("s"):  # Save to Desktop
-            self._save_image(Path.home() / "Desktop", "jpg")
-
-        elif key == ord("d"):  # Save to Downloads
-            self._save_image(Path.home() / "Downloads", "jpg")
-
-        elif key == ord("p"):  # Save as PNG (lossless)
-            self._save_image(Path.home() / "Desktop", "png")
-
-        elif key == ord("c"):  # Save to current directory
-            self._save_image(Path("."), "jpg")
-
-    def _save_image(self, directory, fmt):
-        """Save the displayed image to a directory."""
-        if self._display_original is None:
-            return
-
-        directory = Path(directory)
+        # Auto-save to Downloads
+        directory = Path.home() / "Downloads"
         directory.mkdir(parents=True, exist_ok=True)
-
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"fistransfer_{timestamp}.{fmt}"
-        filepath = directory / filename
-
-        if fmt == "png":
-            cv2.imwrite(str(filepath), self._display_original)
-        else:
-            cv2.imwrite(str(filepath), self._display_original,
-                        [cv2.IMWRITE_JPEG_QUALITY, 98])
-
+        filepath = directory / f"screenshot_{timestamp}.png"
+        
+        cv2.imwrite(str(filepath), original)
+        print(f"[{self.side}] 📸 Saved screenshot to: {filepath}")
         self._save_count += 1
-        h, w = self._display_original.shape[:2]
-        size_kb = filepath.stat().st_size / 1024
-        print(f"[{self.side}] 💾 Saved: {filepath} ({w}×{h}, {size_kb:.0f}KB)")
+        
+        # Spawn the beautiful UI presentation
+        import multiprocessing
+        from shared.glass_viewer import show_glass_window
+        p = multiprocessing.Process(target=show_glass_window, args=(str(filepath),))
+        p.daemon = True
+        p.start()
 
-        # Update overlay to show save confirmation
-        if self._display_image is not None:
-            dh = self._display_image.shape[0]
-            cv2.rectangle(self._display_image, (0, 0), (600, 35), (0, 100, 0), -1)
-            cv2.putText(self._display_image, f"Saved to {filepath.name}!",
-                        (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 0), 2)
-            cv2.imshow(self._caught_window, self._display_image)
+
 
     def _test_send(self):
         """Test send bypassing gesture handshake."""
