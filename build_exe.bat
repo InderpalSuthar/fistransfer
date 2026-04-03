@@ -46,9 +46,9 @@ REM We use --onefile to create a single standalone executable.
 REM We use --add-data to bundle the MediaPipe task model into the .exe.
 pyinstaller --clean --name "FisTransfer" --onefile ^
     --add-data "models/hand_landmarker.task;models" ^
+    --collect-all "mediapipe" ^
     --hidden-import="cv2" ^
     --hidden-import="numpy" ^
-    --hidden-import="mediapipe" ^
     --hidden-import="mss" ^
     --hidden-import="pyautogui" ^
     win/main.py
