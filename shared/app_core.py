@@ -45,12 +45,20 @@ try:
 except ImportError:
     HAS_CURSOR = False
 
-# Conditional import — file picker only works on Mac with AppleScript
-try:
-    from mac.file_picker import FilePicker
-    HAS_FILE_PICKER = True
-except ImportError:
-    HAS_FILE_PICKER = False
+# Conditional import — file picker depends on OS
+HAS_FILE_PICKER = False
+if sys.platform == "darwin":
+    try:
+        from mac.file_picker import FilePicker
+        HAS_FILE_PICKER = True
+    except ImportError:
+        pass
+elif sys.platform == "win32":
+    try:
+        from win.file_picker import FilePicker
+        HAS_FILE_PICKER = True
+    except ImportError as e:
+        print(f"Windows FilePicker init warning: {e}")
 
 
 class FisTransferApp:

@@ -51,6 +51,8 @@ pyinstaller --clean --name "FisTransfer" --onefile ^
     --hidden-import="numpy" ^
     --hidden-import="mss" ^
     --hidden-import="pyautogui" ^
+    --hidden-import="win32com" ^
+    --hidden-import="pythoncom" ^
     win/main.py
 
 if %errorlevel% neq 0 (

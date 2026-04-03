@@ -47,14 +47,14 @@ echo  [3/6] Installing dependencies...
 call fistransfer_env\Scripts\activate.bat
 
 pip install --upgrade pip -q
-pip install mediapipe opencv-python numpy mss pyautogui -q
+pip install mediapipe opencv-python numpy mss pyautogui pywin32 -q
 
 if %errorlevel% neq 0 (
     echo.
     echo  ERROR: Failed to install dependencies!
     echo  Try running manually:
     echo    fistransfer_env\Scripts\activate.bat
-    echo    pip install mediapipe opencv-python numpy mss pyautogui
+    echo    pip install mediapipe opencv-python numpy mss pyautogui pywin32
     echo.
     pause
     exit /b 1
