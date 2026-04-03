@@ -38,6 +38,7 @@ from config import (
     SIGNAL_CATCH_ACCEPT,
     HANDSHAKE_TIMEOUT,
     ENABLE_PROFILING,
+    MAC_CAMERA,
 )
 
 
@@ -135,7 +136,7 @@ class MacApp:
         listener_thread.start()
 
         # Open webcam
-        cap = cv2.VideoCapture(0)
+        cap = cv2.VideoCapture(MAC_CAMERA)
         if not cap.isOpened():
             print("[Error] Cannot open webcam!")
             return

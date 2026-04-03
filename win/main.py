@@ -35,6 +35,7 @@ from config import (
     SIGNAL_CATCH_ACCEPT,
     HANDSHAKE_TIMEOUT,
     ENABLE_PROFILING,
+    WIN_CAMERA,
 )
 
 # ── Import gesture engine from mac package (same code) ───────────────────
@@ -212,7 +213,7 @@ class WinApp:
         transfer_thread.start()
 
         # Open webcam
-        cap = cv2.VideoCapture(0)
+        cap = cv2.VideoCapture(WIN_CAMERA)
         if not cap.isOpened():
             print("[Error] Cannot open webcam!")
             print("[Win] Running in headless mode (no gesture, manual catch only)")

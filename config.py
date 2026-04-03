@@ -11,11 +11,15 @@ Transfer is a TWO-STEP HANDSHAKE:
 """
 
 # ─── Network ────────────────────────────────────────────────────────────────────
-MAC_IP = "10.184.26.171"            # Your Mac IP (from ifconfig en0)
-WIN_IP = "192.168.1.100"            # Windows laptop IP — CHANGE THIS
+MAC_IP = "10.211.55.2"              # Mac on Parallels network (bridge100)
+WIN_IP = "10.211.55.3"              # Windows VM on Parallels
 SIGNAL_PORT = 5005                  # TCP port for handshake signals
 TRANSFER_PORT = 5006                # TCP port for image data transfer
 SOCKET_BUFFER_SIZE = 1_048_576      # 1 MB send/recv buffer
+
+# ─── Camera Sources ─────────────────────────────────────────────────────────────
+MAC_CAMERA = 0                                      # Mac: built-in webcam (index 0)
+WIN_CAMERA = "http://10.120.92.47:4747/video"       # Windows: DroidCam IP stream
 
 # ─── Handshake Protocol ─────────────────────────────────────────────────────────
 # Signal bytes sent between machines
