@@ -1,18 +1,39 @@
 @echo off
-REM FisTransfer — Windows Launcher
-REM Run from the project root: run_win.bat
+REM ============================================================
+REM   FisTransfer — Windows Launcher
+REM   Double-click to start receiving!
+REM ============================================================
 
-set VENV=%~dp0fistransfer_env
+echo.
+echo  ============================================================
+echo    FisTransfer — Windows
+echo    Gesture-controlled screen ^& file transfer
+echo  ============================================================
+echo.
 
-if not exist "%VENV%" (
-    echo X Virtual environment not found at %VENV%
-    echo   Create it with: python -m venv fistransfer_env
-    echo   Then install:   fistransfer_env\Scripts\activate ^&^& pip install -r requirements_win.txt
+REM Activate virtual environment
+if exist "fistransfer_env\Scripts\activate.bat" (
+    call fistransfer_env\Scripts\activate.bat
+) else (
+    echo  ERROR: Virtual environment not found!
+    echo  Run setup_windows.bat first.
+    echo.
+    pause
     exit /b 1
 )
 
-echo Starting FisTransfer Windows Receiver...
-echo.
+REM Check model file
+if not exist "models\hand_landmarker.task" (
+    echo  ERROR: MediaPipe model not found!
+    echo  Run setup_windows.bat first.
+    echo.
+    pause
+    exit /b 1
+)
 
-call "%VENV%\Scripts\activate.bat"
+REM Launch
 python -m win
+
+echo.
+echo  FisTransfer stopped.
+pause

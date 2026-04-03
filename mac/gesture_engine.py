@@ -113,19 +113,27 @@ class GestureEngine:
             return 1.0
         return raw / size
 
+    def _is_finger_folded(self, landmarks, tip_idx, mcp_idx):
+        """Check if a finger is folded by comparing distance to wrist."""
+        wrist = landmarks[0]
+        dist_tip = self._distance(landmarks[tip_idx], wrist)
+        dist_mcp = self._distance(landmarks[mcp_idx], wrist)
+        # If tip is closer to wrist than the knuckle, it's folded
+        return dist_tip < dist_mcp
+
+    def _is_fist(self, landmarks):
+        """Check if middle, ring, pinky are folded (grab/fist gesture)."""
+        tips = [12, 16, 20]     # Middle, Ring, Pinky tips
+        mcps = [9, 13, 17]      # Their MCP joints
+        folded_count = sum(1 for t, m in zip(tips, mcps) if self._is_finger_folded(landmarks, t, m))
+        return folded_count >= 2  # At least 2 of 3 folded = fist
+
     def _all_fingers_extended(self, landmarks):
-        """Check if all fingers are extended (open palm).
-        Compares each fingertip Y with its MCP joint Y.
-        In image coords, lower Y = higher on screen."""
-        # Finger tip and MCP landmark indices
+        """Check if all fingers are extended (open palm)."""
         tips = [8, 12, 16, 20]     # Index, Middle, Ring, Pinky tips
         mcps = [5, 9, 13, 17]      # Their MCP joints
 
-        extended_count = 0
-        for tip_idx, mcp_idx in zip(tips, mcps):
-            # Tip should be above (lower Y) the MCP for extended finger
-            if landmarks[tip_idx].y < landmarks[mcp_idx].y:
-                extended_count += 1
+        extended_count = sum(1 for t, m in zip(tips, mcps) if not self._is_finger_folded(landmarks, t, m))
 
         # Thumb: compare x distance from wrist (works for both hands)
         thumb_tip = landmarks[4]
@@ -209,8 +217,12 @@ class GestureEngine:
             grab_dist = self._grab_distance(lm)
             result["grab_dist"] = round(grab_dist, 4)
 
+            # ── Structural hand properties ───────────────────────────
+            is_fist = self._is_fist(lm)
+
             # ── Detect GRAB (closed fist) ────────────────────────────
-            self.is_grabbed = grab_dist < GRAB_THRESHOLD
+            # A grab is a fist (other fingers folded) where thumb/index are close.
+            self.is_grabbed = (grab_dist < GRAB_THRESHOLD) and is_fist
             result["is_grabbed"] = self.is_grabbed
 
             if self.is_grabbed:
@@ -241,7 +253,8 @@ class GestureEngine:
                 self.catch_confirmed = False
 
             # ── Detect PINCH (thumb + index very close) ──────────────
-            self.is_pinched = grab_dist < PINCH_THRESHOLD
+            # A pinch is thumb/index close but NOT a fist (other fingers open/relaxed).
+            self.is_pinched = (grab_dist < PINCH_THRESHOLD) and not is_fist
             result["is_pinched"] = self.is_pinched
 
             if self.is_pinched:

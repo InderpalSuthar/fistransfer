@@ -39,8 +39,8 @@ TARGET_HEIGHT = 0                   # Set to 1920x1080 to downscale for slower n
 GRAB_THRESHOLD = 0.35               # Normalized thumb–index distance for "grab"
                                     # Open hand ≈ 0.5+, closed fist ≈ 0.2–0.3
 CATCH_THRESHOLD = 0.55              # Distance ABOVE which hand is "open" (catch)
-PINCH_THRESHOLD = 0.12              # Thumb+index very close = pinch (tighter than grab)
-PINCH_RELEASE_THRESHOLD = 0.35      # Thumb+index apart after pinch = release/drop
+PINCH_THRESHOLD = 0.18              # Thumb+index close = pinch (fingers extended)
+PINCH_RELEASE_THRESHOLD = 0.40      # Thumb+index apart after pinch = release/drop
 SWIPE_VELOCITY_THRESHOLD = 0.02     # Min X-velocity (optional)
 SMA_WINDOW = 10                     # Frames for Simple Moving Average
 COOLDOWN_SECONDS = 3.0              # Debounce after a transfer
