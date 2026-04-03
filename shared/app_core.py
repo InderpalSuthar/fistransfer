@@ -13,6 +13,8 @@ import socket
 import struct
 import threading
 import time
+from datetime import datetime
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -22,15 +24,33 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from mac.gesture_engine import GestureEngine
 from mac.screen_capture import ScreenCapture
+from shared.file_transfer import FileSender, FileReceiver
 from config import (
     SIGNAL_PORT,
     TRANSFER_PORT,
     SOCKET_BUFFER_SIZE,
     SIGNAL_GRAB_READY,
     SIGNAL_CATCH_ACCEPT,
+    SIGNAL_FILE_READY,
+    SIGNAL_FILE_ACCEPT,
     HANDSHAKE_TIMEOUT,
     ENABLE_PROFILING,
+    CURSOR_ENABLED,
 )
+
+# Conditional import — cursor control only works on Mac with pyautogui
+try:
+    from mac.cursor_control import CursorController
+    HAS_CURSOR = True
+except ImportError:
+    HAS_CURSOR = False
+
+# Conditional import — file picker only works on Mac with AppleScript
+try:
+    from mac.file_picker import FilePicker
+    HAS_FILE_PICKER = True
+except ImportError:
+    HAS_FILE_PICKER = False
 
 
 class FisTransferApp:
@@ -69,6 +89,24 @@ class FisTransferApp:
         self._image_lock = threading.Lock()
         self._image_show_time = 0
 
+        # ── Image display / save ─────────────────────────────────────────
+        self._display_image = None       # Currently displayed caught image
+        self._display_original = None    # Full-res original for saving
+        self._save_count = 0
+        self._caught_window = f"FisTransfer — Caught! [{self.side}]"
+
+        # ── File transfer ────────────────────────────────────────────
+        self._file_receiver = FileReceiver()
+        self._file_from_peer = threading.Event()     # Peer sent FILE_READY
+        self._file_accept_from_peer = threading.Event()  # Peer sent FILE_OK
+        self._picked_file = None   # FilePicker result when pinch detected
+
+        # ── Cursor control ──────────────────────────────────────────
+        self._cursor = None
+        if HAS_CURSOR and CURSOR_ENABLED:
+            self._cursor = CursorController()
+            print(f"[{self.side}] 🖐 Cursor control enabled")
+
     # ═══════════════════════════════════════════════════════════════════════
     # NETWORK: Listeners
     # ═══════════════════════════════════════════════════════════════════════
@@ -96,6 +134,12 @@ class FisTransferApp:
                     elif data == SIGNAL_CATCH_ACCEPT:
                         print(f"\n[{self.side}] 🖐 Peer CATCH signal from {addr[0]}!")
                         self._catch_from_peer.set()
+                    elif data == SIGNAL_FILE_READY:
+                        print(f"\n[{self.side}] 🤏 Peer FILE signal from {addr[0]}!")
+                        self._file_from_peer.set()
+                    elif data == SIGNAL_FILE_ACCEPT:
+                        print(f"\n[{self.side}] 🖐 Peer FILE ACCEPT from {addr[0]}!")
+                        self._file_accept_from_peer.set()
 
                 except socket.timeout:
                     continue
@@ -227,14 +271,28 @@ class FisTransferApp:
         print()
         print("  🤜 Close FIST (0.5s)  → GRAB and send your screen")
         print("  🖐  Open PALM (0.3s)   → CATCH and receive their screen")
+        print("  🤏 PINCH (0.3s)        → Pick up selected file")
+        print("  🤏→🖐 Release pinch   → Drop/accept incoming file")
         print()
-        print("  Controls: q=Quit  t=Test send (bypass handshake)")
+        print("  Controls:")
+        print("    q — Quit")
+        print("    t — Test send (bypass handshake)")
+        print("    m — Toggle cursor control")
+        print()
+        print("  When a screenshot is caught:")
+        print("    s — Save to Desktop")
+        print("    d — Save to Downloads")
+        print("    p — Save as PNG (lossless)")
+        print("    c — Save to current directory")
+        print("    Esc — Dismiss")
         print()
 
         # Start listeners
         threading.Thread(target=self._signal_listener, daemon=True).start()
         time.sleep(0.1)
         threading.Thread(target=self._transfer_listener, daemon=True).start()
+        time.sleep(0.1)
+        threading.Thread(target=self._file_receiver.listen, daemon=True).start()
         time.sleep(0.1)
 
         # Open camera
@@ -263,12 +321,23 @@ class FisTransferApp:
                 frame = cv2.flip(frame, 1)
                 result, annotated = self.gesture.process_frame(frame)
 
-                # ── Handle incoming grab from peer (they want to send) ───
+                # ── Cursor control (move mouse with hand) ────────────────
+                if self._cursor and self._cursor.enabled and result["hand_detected"]:
+                    self._cursor.update(result["cursor_x"], result["cursor_y"])
+
+                # ── Handle incoming grab from peer (screenshot) ──────────
                 if self._grab_from_peer.is_set() and self.state == "IDLE":
                     self._grab_from_peer.clear()
                     self.state = "CATCH_PROMPT"
                     self.state_time = time.time()
-                    print(f"  🖐 Peer wants to send! Show OPEN PALM to catch!")
+                    print(f"  🖐 Peer wants to send screenshot! Show OPEN PALM!")
+
+                # ── Handle incoming file signal from peer ────────────────
+                if self._file_from_peer.is_set() and self.state == "IDLE":
+                    self._file_from_peer.clear()
+                    self.state = "FILE_RECEIVE_PROMPT"
+                    self.state_time = time.time()
+                    print(f"  🤏 Peer wants to send a file! Release PINCH to accept!")
 
                 # ── State machine ────────────────────────────────────────
                 self._process_state(result, annotated)
@@ -284,6 +353,11 @@ class FisTransferApp:
                     break
                 elif key == ord("t"):
                     self._test_send()
+                elif key == ord("m"):
+                    if self._cursor:
+                        self._cursor.toggle()
+                elif self._display_original is not None:
+                    self._handle_save_key(key)
 
         except KeyboardInterrupt:
             print(f"\n[{self.side}] Interrupted.")
@@ -301,11 +375,34 @@ class FisTransferApp:
 
         if self.state == "IDLE":
             # ── Show idle status ─────────────────────────────────────
-            cv2.putText(annotated, "FIST=Send | PALM=Catch",
-                        (10, 140), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (180, 180, 180), 1)
+            cv2.putText(annotated, "FIST=Screenshot | PINCH=File | PALM=Catch",
+                        (10, 140), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (180, 180, 180), 1)
 
-            # ── Check for our GRAB ───────────────────────────────────
-            if result["grab_confirmed"]:
+            # ── Check for PINCH (file pick) — higher priority ────────
+            if result["pinch_confirmed"] and HAS_FILE_PICKER:
+                file_info = FilePicker.get_selected_file()
+                if file_info:
+                    print(f"\n  🤏 PINCH! Picked: {file_info['name']} ({file_info['size']/1024:.0f}KB)")
+                    prepared = FilePicker.prepare_for_transfer(file_info)
+                    self._picked_file = prepared
+
+                    if self._send_signal(SIGNAL_FILE_READY):
+                        self.state = "FILE_SENT"
+                        self.state_time = now
+                        self._file_accept_from_peer.clear()
+                        print(f"  ⏳ Waiting for peer to accept file...")
+                    else:
+                        print(f"  ❌ Peer unreachable. Is it running?")
+                        FilePicker.cleanup(prepared)
+                        self._picked_file = None
+                        self.gesture.mark_transfer_complete()
+                else:
+                    print(f"\n  🤏 PINCH! But no file selected in Finder.")
+                    print(f"      Select a file in Finder first, then pinch.")
+                    self.gesture.mark_transfer_complete()
+
+            # ── Check for GRAB (screenshot) ──────────────────────────
+            elif result["grab_confirmed"]:
                 print(f"\n  🤜 GRAB! Sending signal to peer...")
                 if self._send_signal(SIGNAL_GRAB_READY):
                     self.state = "GRAB_SENT"
@@ -345,8 +442,41 @@ class FisTransferApp:
                 self.state = "IDLE"
                 self.gesture.mark_transfer_complete()
 
+        elif self.state == "FILE_SENT":
+            # ── Waiting for peer to accept file ──────────────────────
+            remaining = max(0, HANDSHAKE_TIMEOUT - (now - self.state_time))
+
+            cv2.rectangle(annotated, (5, 120), (635, 175), (100, 0, 100), -1)
+            name = self._picked_file["original_name"] if self._picked_file else "?"
+            cv2.putText(annotated, f"Sending '{name}'... wait for peer [{remaining:.0f}s]",
+                        (10, 155), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 180, 255), 2)
+
+            if self._file_accept_from_peer.is_set():
+                self._file_accept_from_peer.clear()
+                print(f"\n  🎯 FILE ACCEPTED! Sending file...")
+
+                # Send in background so UI stays responsive
+                def _bg_send():
+                    success = FileSender.send(self.peer_ip, self._picked_file)
+                    if success:
+                        print(f"  ✅ File transfer complete!")
+                    FilePicker.cleanup(self._picked_file)
+                    self._picked_file = None
+
+                threading.Thread(target=_bg_send, daemon=True).start()
+                self.state = "IDLE"
+                self.gesture.mark_transfer_complete()
+
+            elif remaining <= 0:
+                print(f"  ⏰ Timeout! Peer didn't accept file.")
+                if self._picked_file:
+                    FilePicker.cleanup(self._picked_file)
+                    self._picked_file = None
+                self.state = "IDLE"
+                self.gesture.mark_transfer_complete()
+
         elif self.state == "CATCH_PROMPT":
-            # ── Peer wants to send — show catch prompt ───────────────
+            # ── Peer wants to send screenshot — show catch prompt ─────
             remaining = max(0, HANDSHAKE_TIMEOUT - (now - self.state_time))
 
             cv2.rectangle(annotated, (5, 120), (635, 175), (0, 80, 0), -1)
@@ -364,21 +494,118 @@ class FisTransferApp:
                 self.state = "IDLE"
                 self.gesture.mark_transfer_complete()
 
+        elif self.state == "FILE_RECEIVE_PROMPT":
+            # ── Peer wants to send a file — release pinch to accept ───
+            remaining = max(0, HANDSHAKE_TIMEOUT - (now - self.state_time))
+
+            cv2.rectangle(annotated, (5, 120), (635, 175), (100, 0, 100), -1)
+            cv2.putText(annotated, f"Incoming file! Release PINCH to accept [{remaining:.0f}s]",
+                        (10, 155), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 180, 255), 2)
+
+            if result["pinch_released"] or result["catch_confirmed"]:
+                print(f"  🖐 ACCEPTED! Receiving file...")
+                self._send_signal(SIGNAL_FILE_ACCEPT)
+                self.state = "IDLE"
+                self.gesture.mark_transfer_complete()
+
+            elif remaining <= 0:
+                print(f"  ⏰ Timeout! Peer's file offer expired.")
+                self.state = "IDLE"
+                self.gesture.mark_transfer_complete()
+
     def _show_received_image(self):
-        """Display received image in a separate window."""
+        """Display received image with save options overlay."""
         with self._image_lock:
             if self._received_image is None:
                 return
-            image = self._received_image.copy()
+            original = self._received_image.copy()
             self._received_image = None
 
-        h, w = image.shape[:2]
+        # Store full-res original for saving
+        self._display_original = original
+
+        h, w = original.shape[:2]
         scale = min(1280 / w, 720 / h, 1.0)
         if scale < 1.0:
-            image = cv2.resize(image, (int(w * scale), int(h * scale)))
+            display = cv2.resize(original, (int(w * scale), int(h * scale)))
+        else:
+            display = original.copy()
 
-        cv2.imshow(f"FisTransfer — Caught! [{self.side}]", image)
-        print(f"[{self.side}] 📺 Image displayed!")
+        # Add save options overlay
+        self._add_save_overlay(display, w, h)
+        self._display_image = display
+
+        cv2.imshow(self._caught_window, display)
+        print(f"[{self.side}] 📺 Screenshot caught! ({w}×{h})")
+        print(f"[{self.side}] 💡 Press: s=Desktop  d=Downloads  p=PNG  c=Here  Esc=Dismiss")
+
+    def _add_save_overlay(self, display, orig_w, orig_h):
+        """Draw save options bar at the bottom of the display image."""
+        dh, dw = display.shape[:2]
+        bar_h = 50
+        y_start = dh - bar_h
+
+        # Semi-transparent dark bar
+        overlay = display.copy()
+        cv2.rectangle(overlay, (0, y_start), (dw, dh), (20, 20, 30), -1)
+        cv2.addWeighted(overlay, 0.85, display, 0.15, 0, display)
+
+        # Options text
+        cv2.putText(display, f"[S] Desktop  [D] Downloads  [P] PNG  [C] Here  [Esc] Dismiss",
+                    (15, y_start + 22), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (180, 220, 255), 1)
+        cv2.putText(display, f"{orig_w}x{orig_h} | Saved: {self._save_count}",
+                    (15, y_start + 42), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (140, 140, 140), 1)
+
+    def _handle_save_key(self, key):
+        """Handle save-related key presses."""
+        if key == 27:  # Esc — dismiss
+            cv2.destroyWindow(self._caught_window)
+            self._display_original = None
+            self._display_image = None
+            print(f"[{self.side}] Dismissed.")
+
+        elif key == ord("s"):  # Save to Desktop
+            self._save_image(Path.home() / "Desktop", "jpg")
+
+        elif key == ord("d"):  # Save to Downloads
+            self._save_image(Path.home() / "Downloads", "jpg")
+
+        elif key == ord("p"):  # Save as PNG (lossless)
+            self._save_image(Path.home() / "Desktop", "png")
+
+        elif key == ord("c"):  # Save to current directory
+            self._save_image(Path("."), "jpg")
+
+    def _save_image(self, directory, fmt):
+        """Save the displayed image to a directory."""
+        if self._display_original is None:
+            return
+
+        directory = Path(directory)
+        directory.mkdir(parents=True, exist_ok=True)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"fistransfer_{timestamp}.{fmt}"
+        filepath = directory / filename
+
+        if fmt == "png":
+            cv2.imwrite(str(filepath), self._display_original)
+        else:
+            cv2.imwrite(str(filepath), self._display_original,
+                        [cv2.IMWRITE_JPEG_QUALITY, 98])
+
+        self._save_count += 1
+        h, w = self._display_original.shape[:2]
+        size_kb = filepath.stat().st_size / 1024
+        print(f"[{self.side}] 💾 Saved: {filepath} ({w}×{h}, {size_kb:.0f}KB)")
+
+        # Update overlay to show save confirmation
+        if self._display_image is not None:
+            dh = self._display_image.shape[0]
+            cv2.rectangle(self._display_image, (0, 0), (600, 35), (0, 100, 0), -1)
+            cv2.putText(self._display_image, f"Saved to {filepath.name}!",
+                        (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 0), 2)
+            cv2.imshow(self._caught_window, self._display_image)
 
     def _test_send(self):
         """Test send bypassing gesture handshake."""

@@ -30,6 +30,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from config import (
     GRAB_THRESHOLD,
     CATCH_THRESHOLD,
+    PINCH_THRESHOLD,
+    PINCH_RELEASE_THRESHOLD,
     SWIPE_VELOCITY_THRESHOLD,
     SMA_WINDOW,
     COOLDOWN_SECONDS,
@@ -75,6 +77,18 @@ class GestureEngine:
         self._catch_start_time = None
         self._catch_hold_required = 0.3  # Must show open palm for 0.3s
         self.catch_confirmed = False
+
+        # ── Pinch tracking ───────────────────────────────────────────
+        self.is_pinched = False
+        self._was_pinched = False       # For detecting pinch → release
+        self.pinch_released = False     # True for one frame on release
+        self._pinch_start_time = None
+        self._pinch_hold_required = 0.3 # Must hold pinch for 0.3s
+        self.pinch_confirmed = False
+
+        # ── Cursor position ──────────────────────────────────────────
+        self.cursor_x = 0.5            # Normalized index finger tip X
+        self.cursor_y = 0.5            # Normalized index finger tip Y
 
     # ── Landmark helpers ─────────────────────────────────────────────────
 
@@ -168,11 +182,16 @@ class GestureEngine:
         result = {
             "grab_confirmed": False,
             "catch_confirmed": False,
+            "pinch_confirmed": False,
+            "pinch_released": False,
             "is_grabbed": False,
             "is_open": False,
+            "is_pinched": False,
             "grab_dist": None,
             "velocity": 0.0,
             "hand_detected": False,
+            "cursor_x": 0.5,
+            "cursor_y": 0.5,
         }
 
         rgb = cv2.cvtColor(bgr_frame, cv2.COLOR_BGR2RGB)
@@ -221,13 +240,44 @@ class GestureEngine:
                 self._catch_start_time = None
                 self.catch_confirmed = False
 
+            # ── Detect PINCH (thumb + index very close) ──────────────
+            self.is_pinched = grab_dist < PINCH_THRESHOLD
+            result["is_pinched"] = self.is_pinched
+
+            if self.is_pinched:
+                if self._pinch_start_time is None:
+                    self._pinch_start_time = now
+                elif (now - self._pinch_start_time) >= self._pinch_hold_required:
+                    if (now - self.last_trigger_time) > COOLDOWN_SECONDS:
+                        self.pinch_confirmed = True
+                        result["pinch_confirmed"] = True
+                self._was_pinched = True
+            else:
+                self._pinch_start_time = None
+                # Detect release: was pinched → now open
+                if self._was_pinched and grab_dist > PINCH_RELEASE_THRESHOLD:
+                    self.pinch_released = True
+                    result["pinch_released"] = True
+                    self._was_pinched = False
+                else:
+                    self.pinch_released = False
+                self.pinch_confirmed = False
+
+            # ── Cursor position (index finger tip LM8) ───────────────
+            self.cursor_x = lm[8].x
+            self.cursor_y = lm[8].y
+            result["cursor_x"] = self.cursor_x
+            result["cursor_y"] = self.cursor_y
+
             # ── Velocity ─────────────────────────────────────────────
             self.x_history.append(self._palm_x(lm))
             velocity = self._compute_velocity()
             result["velocity"] = round(velocity, 5)
 
             # ── Draw ─────────────────────────────────────────────────
-            if self.is_grabbed:
+            if self.is_pinched:
+                draw_color = (255, 0, 255)     # Magenta = pinched
+            elif self.is_grabbed:
                 draw_color = (0, 0, 255)       # Red = grabbed
             elif self.is_open:
                 draw_color = (255, 200, 0)     # Cyan = open/catching
@@ -236,7 +286,15 @@ class GestureEngine:
             self._draw_landmarks(bgr_frame, lm, draw_color)
 
             # ── Visual feedback ──────────────────────────────────────
-            if self.is_grabbed:
+            if self.is_pinched:
+                status = "PINCH"
+                hold_pct = ""
+                if self._pinch_start_time:
+                    elapsed = min(now - self._pinch_start_time, self._pinch_hold_required)
+                    pct = int(elapsed / self._pinch_hold_required * 100)
+                    hold_pct = f" [{pct}%]"
+                color = (255, 0, 255)
+            elif self.is_grabbed:
                 status = "GRABBED"
                 hold_pct = ""
                 if self._grab_start_time:
@@ -266,12 +324,22 @@ class GestureEngine:
                 (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 200, 0), 2,
             )
 
-            if result["grab_confirmed"]:
+            if result["pinch_confirmed"]:
+                cv2.putText(
+                    bgr_frame, ">>> PINCH — File picked up! <<<",
+                    (10, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 255), 2,
+                )
+            elif result["pinch_released"]:
+                cv2.putText(
+                    bgr_frame, ">>> RELEASE — File dropped! <<<",
+                    (10, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2,
+                )
+            elif result["grab_confirmed"]:
                 cv2.putText(
                     bgr_frame, ">>> GRAB READY — waiting for catch <<<",
                     (10, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2,
                 )
-            if result["catch_confirmed"]:
+            elif result["catch_confirmed"]:
                 cv2.putText(
                     bgr_frame, ">>> CATCH! Receiving... <<<",
                     (10, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2,
@@ -280,10 +348,15 @@ class GestureEngine:
             self.x_history.clear()
             self.is_grabbed = False
             self.is_open = False
+            self.is_pinched = False
+            self._was_pinched = False
+            self.pinch_released = False
             self._grab_start_time = None
             self._catch_start_time = None
+            self._pinch_start_time = None
             self.grab_confirmed = False
             self.catch_confirmed = False
+            self.pinch_confirmed = False
 
         return result, bgr_frame
 
