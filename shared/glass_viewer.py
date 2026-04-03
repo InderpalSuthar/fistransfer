@@ -6,10 +6,28 @@ received screenshots and image files gracefully over the active desktop.
 """
 
 import sys
-import tkinter as tk
-from PIL import Image, ImageTk
+import os
+import subprocess
+
+try:
+    import tkinter as tk
+    from PIL import Image, ImageTk
+    HAS_TKINTER = True
+except ImportError:
+    HAS_TKINTER = False
 
 def show_glass_window(image_path):
+    if not HAS_TKINTER:
+        # Fallback to native beautiful OS preview if Tkinter is missing (common on macOS)
+        if sys.platform == "darwin":
+            subprocess.run(["qlmanage", "-p", str(image_path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            try:
+                os.startfile(str(image_path))
+            except Exception:
+                pass
+        return
+
     root = tk.Tk()
     
     # ── Remove standard window borders ──
