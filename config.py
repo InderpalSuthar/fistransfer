@@ -29,9 +29,9 @@ SIGNAL_HEARTBEAT = b"HEARTBEAT"     # Keep-alive ping
 HANDSHAKE_TIMEOUT = 10.0            # Seconds to wait for catch after grab
 
 # ─── Screen Capture ─────────────────────────────────────────────────────────────
-JPEG_QUALITY = 65                   # JPEG compression (60–70 sweet spot)
-TARGET_WIDTH = 1920                 # Downscale to target resolution
-TARGET_HEIGHT = 1080
+JPEG_QUALITY = 95                   # JPEG quality (95 = near-lossless, like native screenshot)
+TARGET_WIDTH = 0                    # 0 = native resolution (no downscale)
+TARGET_HEIGHT = 0                   # Set to 1920x1080 to downscale for slower networks
 
 # ─── Gesture Detection ──────────────────────────────────────────────────────────
 GRAB_THRESHOLD = 0.35               # Normalized thumb–index distance for "grab"

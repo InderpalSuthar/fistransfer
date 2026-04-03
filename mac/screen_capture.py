@@ -52,11 +52,12 @@ class ScreenCapture:
         frame = frame[:, :, :3]  # Drop alpha channel (BGRA → BGR)
         t2 = time.perf_counter()
 
-        # ── 2. Downscale to target resolution ────────────────────────────────
-        frame = cv2.resize(
-            frame, (TARGET_WIDTH, TARGET_HEIGHT),
-            interpolation=cv2.INTER_AREA,
-        )
+        # ── 2. Downscale to target resolution (skip if 0 = native) ────────
+        if TARGET_WIDTH > 0 and TARGET_HEIGHT > 0:
+            frame = cv2.resize(
+                frame, (TARGET_WIDTH, TARGET_HEIGHT),
+                interpolation=cv2.INTER_AREA,
+            )
         t3 = time.perf_counter()
 
         # ── 3. JPEG compression ──────────────────────────────────────────────
