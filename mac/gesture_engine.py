@@ -39,9 +39,13 @@ from config import (
 )
 
 # ── Resolve model path ──────────────────────────────────────────────────────
-_MODEL_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "models", "hand_landmarker.task"
-)
+# PyInstaller unpacks data to sys._MEIPASS in the compiled executable
+if hasattr(sys, '_MEIPASS'):
+    _MODEL_PATH = os.path.join(sys._MEIPASS, "models", "hand_landmarker.task")
+else:
+    _MODEL_PATH = os.path.join(
+        os.path.dirname(__file__), "..", "models", "hand_landmarker.task"
+    )
 
 # ── Pre-build the connection set for drawing ─────────────────────────────────
 _HAND_CONNECTIONS = HandLandmarksConnections.HAND_CONNECTIONS
