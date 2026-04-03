@@ -14,8 +14,10 @@ try:
     import win32com.client
     import win32gui
     import pythoncom
-except ImportError:
-    pass
+    HAS_PYWIN32 = True
+except ImportError as e:
+    HAS_PYWIN32 = False
+    print(f"[FilePicker] PyWin32 not available: {e}")
 
 
 class FilePicker:
@@ -25,13 +27,11 @@ class FilePicker:
     def get_selected_file():
         """
         Get the path of the currently selected item in Windows Explorer.
-
-        Returns
-        -------
-        dict or None
-            {"path": str, "name": str, "size": int, "is_dir": bool}
-            None if nothing is selected.
         """
+        if not HAS_PYWIN32:
+            print("[FilePicker] Cannot pick file: pywin32 is not installed properly.")
+            return None
+
         try:
             # Required for COM in threads
             pythoncom.CoInitialize()
@@ -100,7 +100,8 @@ class FilePicker:
             print(f"[FilePicker] Error accessing Windows COM: {e}")
             return None
         finally:
-            pythoncom.CoUninitialize()
+            if HAS_PYWIN32:
+                pythoncom.CoUninitialize()
 
     @staticmethod
     def prepare_for_transfer(file_info):
