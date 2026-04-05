@@ -24,7 +24,7 @@ def main():
     
     # ── Camera Setup ──
     print(f"Default Camera: {WIN_CAMERA}")
-    print("  (Type 0 for laptop webcam, 1 for USB cam, or IP URL limit)")
+    print("  (Type 0 for laptop webcam, 1 for USB cam, or IP URL)")
     custom_cam = input("Enter Camera (or press Enter to use default): ").strip()
     
     if not custom_cam:
@@ -34,10 +34,15 @@ def main():
     else:
         target_cam = custom_cam
 
-    # ── Peer IP Auto-Discovery ──
-    target_ip = discover_peer("win", DISCOVERY_PORT)
-    if not target_ip:
-        target_ip = MAC_IP
+    # ── Peer IP Sync ──
+    # Check for manual IP argument (consistent with Mac)
+    if len(sys.argv) > 1:
+        target_ip = sys.argv[1]
+        print(f"[WIN] 🎯 Using manual peer IP: {target_ip}")
+    else:
+        target_ip = discover_peer("win", DISCOVERY_PORT)
+        if not target_ip:
+            target_ip = MAC_IP
 
     print("\n[OK] Starting FisTransfer...\n")
 

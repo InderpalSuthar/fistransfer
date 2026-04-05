@@ -149,6 +149,8 @@ class FisTransferApp:
                     elif data == SIGNAL_FILE_ACCEPT:
                         print(f"\n[{self.side}] 🖐 Peer FILE ACCEPT from {addr[0]}!")
                         self._file_accept_from_peer.set()
+                    else:
+                        print(f"\n[{self.side}] ❓ Unknown signal received from {addr[0]}: {data}")
 
                 except socket.timeout:
                     continue

@@ -25,12 +25,12 @@ WIN_CAMERA = "http://10.108.233.61:4747/video"       # Windows: DroidCam IP stre
 
 # ─── Handshake Protocol ─────────────────────────────────────────────────────────
 # Signal bytes sent between machines
-SIGNAL_GRAB_READY = b"GRAB_READY"   # GRAB → CATCH screenshot handshake
-SIGNAL_CATCH_ACCEPT = b"CATCH_OK"   # Peer accepted screenshot
-SIGNAL_FILE_READY = b"FILE_READY"   # PINCH → file picked up, ready to send
-SIGNAL_FILE_ACCEPT = b"FILE_OK"     # Peer accepted file (pinch released)
-SIGNAL_HEARTBEAT = b"HEARTBEAT"     # Keep-alive ping
-HANDSHAKE_TIMEOUT = 10.0            # Seconds to wait for peer response
+SIGNAL_GRAB_READY = b"GRAB"         # GRAB → CATCH screenshot handshake
+SIGNAL_CATCH_ACCEPT = b"CATCH"       # Peer accepted screenshot
+SIGNAL_FILE_READY = b"FILE_OFFER"    # PINCH → file picked up, ready to send
+SIGNAL_FILE_ACCEPT = b"FILE_ACCEPT"   # Peer accepted file (pinch released)
+SIGNAL_HEARTBEAT = b"HEARTBEAT"      # Keep-alive ping
+HANDSHAKE_TIMEOUT = 15.0            # Seconds to wait for peer response
 
 # ─── Screen Capture ─────────────────────────────────────────────────────────────
 JPEG_QUALITY = 95                   # JPEG quality (95 = near-lossless, like native screenshot)

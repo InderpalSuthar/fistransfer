@@ -55,115 +55,27 @@ fistransfer/
 
 ### Prerequisites
 
-- **Python 3.10+** on both machines
+- **Python 3.10+** on desktops
+- **Android 8.0+** for mobile
 - Both machines on the **same network** (wired or 5GHz Wi-Fi recommended)
-- Webcam on the MacBook
 
-### 1. Configure Network
+### 🚀 Android Integration (New!)
 
-Edit `config.py` and set your Windows laptop's IP:
+FisTransfer now supports full **Android-to-Desktop** and **Android-to-Android** transfers with persistent background support.
 
-```python
-RECEIVER_IP = "192.168.1.100"   # ← Change to your Windows IP
-RECEIVER_PORT = 5005
-```
-
-**Find your Windows IP:** Open Command Prompt → `ipconfig` → look for IPv4 Address.
-
-### 2. Open Firewall (Windows)
-
-On the Windows laptop, open port 5005:
-
-```powershell
-# Run in PowerShell as Administrator
-New-NetFirewallRule -DisplayName "FisTransfer" -Direction Inbound -LocalPort 5005 -Protocol TCP -Action Allow
-```
-
-### 3. Install Dependencies
-
-**On Mac:**
-```bash
-cd fistransfer
-pip install -r requirements_mac.txt
-```
-
-**On Windows:**
-```bash
-cd fistransfer
-pip install -r requirements_win.txt
-```
-
-### 4. Run
-
-**Step 1 — Start the Windows receiver first:**
-```bash
-python -m win.main
-```
-
-**Step 2 — Start the Mac sender:**
-```bash
-python -m mac.main
-```
-
-### 5. Throw!
-
-1. Hold your hand in front of the webcam
-2. Pinch thumb + index finger together (grab)
-3. Swipe your hand left (or right, depending on `SWIPE_DIRECTION` in config)
-4. Watch the screen appear on your Windows laptop!
+1.  **Install the APK**: Located in `android/app/build/outputs/apk/debug/app-debug.apk`.
+2.  **Enable Background Mode**: Tap "Activate Floating Gestures" to keep the app connected even when minimized.
+3.  **Floating Gesture Bubble**: Use the draggable circular camera preview to perform gestures while using other apps.
+4.  **Universal Discovery**: Phones will automatically find Laptops or other Phones on the same network.
 
 ---
 
-## Testing
+## Technical Highlights (Mobile)
 
-### Socket Test (on a single machine)
-
-```bash
-python tests/test_socket.py
-```
-
-### Gesture Tuning
-
-```bash
-python tests/test_gesture.py
-```
-
-Use this to fine-tune `GRAB_THRESHOLD` and `SWIPE_VELOCITY_THRESHOLD` in `config.py`.
-
----
-
-## Configuration Reference
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `RECEIVER_IP` | `192.168.1.100` | Windows laptop IP |
-| `RECEIVER_PORT` | `5005` | TCP port |
-| `JPEG_QUALITY` | `65` | Compression (60–70 optimal) |
-| `TARGET_WIDTH` | `1920` | Downscale width |
-| `TARGET_HEIGHT` | `1080` | Donscale height |
-| `GRAB_THRESHOLD` | `0.07` | Grab sensitivity |
-| `SWIPE_VELOCITY_THRESHOLD` | `0.02` | Swipe sensitivity |
-| `SWIPE_DIRECTION` | `"left"` | `"left"` or `"right"` |
-| `COOLDOWN_SECONDS` | `2.0` | Debounce between throws |
-| `ANIMATION_DURATION_MS` | `300` | Slide-in speed |
-| `AUTO_DISMISS_SECONDS` | `5` | Image display time |
-
----
-
-## Keyboard Shortcuts
-
-### Mac (Gesture Monitor)
-| Key | Action |
-|-----|--------|
-| `q` | Quit |
-| `t` | Test send (capture + send without gesture) |
-
-### Windows (Catch Window)
-| Action | Behavior |
-|--------|----------|
-| Double-click | Dismiss image immediately |
-| Drag | Move image around |
-| System tray → Quit | Exit cleanly |
+*   **Foreground Service**: Keeps network listeners alive via a persistent notification.
+*   **MediaProjection API**: Captures system-wide screenshots from any app.
+*   **Floating Camera Overlay**: Bypasses Android's background camera restrictions for continuous gesture tracking.
+*   **Stream-to-Disk**: Handles large files (>500MB) without memory issues.
 
 ---
 
@@ -171,16 +83,11 @@ Use this to fine-tune `GRAB_THRESHOLD` and `SWIPE_VELOCITY_THRESHOLD` in `config
 
 | Stage | Target |
 |-------|--------|
-| Screen capture (mss) | < 25ms |
-| JPEG encode (Q65) | < 20ms |
-| Network transfer | < 50ms |
+| Screen capture (mss/projection) | < 35ms |
+| JPEG encode (Q70) | < 25ms |
+| Network transfer (TCP/UDP) | < 40ms |
 | Decode + render | < 20ms |
 | **Total end-to-end** | **< 200ms** |
-
-Enable profiling in `config.py` to see per-stage timings:
-```python
-ENABLE_PROFILING = True
-```
 
 ---
 
@@ -188,9 +95,7 @@ ENABLE_PROFILING = True
 
 | Problem | Solution |
 |---------|----------|
-| Connection refused | Check Windows firewall, verify IP in config |
-| Gesture too sensitive | Increase `GRAB_THRESHOLD` (e.g., 0.09) |
-| Gesture not triggering | Decrease `GRAB_THRESHOLD` (e.g., 0.05) |
-| Image too large/slow | Lower `JPEG_QUALITY` (e.g., 50) |
-| Webcam not found | Check `cv2.VideoCapture(0)` — try index 1 |
-| High latency | Use wired connection or 5GHz Wi-Fi |
+| Connection refused | Check Firewall, verify IP/Hotspot settings |
+| Background Gestures lag | Ensure "No restrictions" in Battery settings |
+| Bubble disappears | Re-grant "Display Over Other Apps" permission |
+| Peer not found | Verify both devices are on the same 2.4/5GHz band |
