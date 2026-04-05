@@ -21,7 +21,7 @@ WIN_IP = "10.211.55.3"              # (Fallback) Windows VM on Parallels
 
 # ─── Camera Sources ─────────────────────────────────────────────────────────────
 MAC_CAMERA = 0                                      # Mac: built-in webcam (index 0)
-WIN_CAMERA = "http://10.120.92.47:4747/video"       # Windows: DroidCam IP stream
+WIN_CAMERA = "http://10.108.233.61:4747/video"       # Windows: DroidCam IP stream
 
 # ─── Handshake Protocol ─────────────────────────────────────────────────────────
 # Signal bytes sent between machines
