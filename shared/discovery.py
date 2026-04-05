@@ -34,7 +34,7 @@ def discover_peer(my_side, discovery_port, timeout=120.0):
                 pass
                 
             sock.bind(("", discovery_port))
-            sock.settimeout(1.0)
+            sock.settimeout(0.1)
             
             while not stop_event.is_set():
                 try:
@@ -62,11 +62,12 @@ def discover_peer(my_side, discovery_port, timeout=120.0):
     start_time = time.time()
     while not stop_event.is_set() and (time.time() - start_time) < timeout:
         try:
-            # Broadcast on local subnet
+            # Broadcast on local subnet aggressively
             send_sock.sendto(my_msg, ("<broadcast>", discovery_port))
         except OSError:
             pass
-        time.sleep(1.0)
+        # Use .wait() instead of sleep() so it immediately breaks when found
+        stop_event.wait(0.1)
         
     send_sock.close()
     stop_event.set()
