@@ -60,8 +60,8 @@ class GestureEngine:
             base_options=BaseOptions(model_asset_path=_MODEL_PATH),
             running_mode=RunningMode.VIDEO,
             num_hands=1,
-            min_hand_detection_confidence=0.7,
-            min_tracking_confidence=0.6,
+            min_hand_detection_confidence=0.5,
+            min_tracking_confidence=0.5,
         )
         self.detector = HandLandmarker.create_from_options(options)
         self._frame_ts = 0
@@ -74,12 +74,12 @@ class GestureEngine:
 
         # ── Grab hold tracking ───────────────────────────────────────────
         self._grab_start_time = None
-        self._grab_hold_required = 0.5  # Must hold grab for 0.5s
+        self._grab_hold_required = 0.15  # Must hold grab for 0.15s (super snappy)
         self.grab_confirmed = False     # True when grab held long enough
 
         # ── Catch tracking ───────────────────────────────────────────────
         self._catch_start_time = None
-        self._catch_hold_required = 0.3  # Must show open palm for 0.3s
+        self._catch_hold_required = 0.1  # Must show open palm for 0.1s
         self.catch_confirmed = False
 
         # ── Pinch tracking ───────────────────────────────────────────
@@ -87,7 +87,7 @@ class GestureEngine:
         self._was_pinched = False       # For detecting pinch → release
         self.pinch_released = False     # True for one frame on release
         self._pinch_start_time = None
-        self._pinch_hold_required = 0.3 # Must hold pinch for 0.3s
+        self._pinch_hold_required = 0.1 # Must hold pinch for 0.1s
         self.pinch_confirmed = False
 
         # ── Cursor position ──────────────────────────────────────────

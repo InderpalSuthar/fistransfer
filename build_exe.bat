@@ -53,6 +53,9 @@ pyinstaller --clean --name "FisTransfer" --onefile ^
     --hidden-import="pyautogui" ^
     --hidden-import="win32com" ^
     --hidden-import="pythoncom" ^
+    --hidden-import="PIL" ^
+    --hidden-import="PIL._tkinter_finder" ^
+    --hidden-import="tkinter" ^
     win/main.py
 
 if %errorlevel% neq 0 (

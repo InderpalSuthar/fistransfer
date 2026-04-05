@@ -10,12 +10,14 @@ Transfer modes:
 """
 
 # ─── Network ────────────────────────────────────────────────────────────────────
-MAC_IP = "10.211.55.2"              # Mac on Parallels network (bridge100)
-WIN_IP = "10.211.55.3"              # Windows VM on Parallels
+DISCOVERY_PORT = 5004               # UDP port for automatic IP discovery
 SIGNAL_PORT = 5005                  # TCP port for handshake signals
 TRANSFER_PORT = 5006                # TCP port for image data transfer
 FILE_TRANSFER_PORT = 5007           # TCP port for file transfers
 SOCKET_BUFFER_SIZE = 1_048_576      # 1 MB send/recv buffer
+
+MAC_IP = "10.211.55.2"              # (Fallback) Mac on Parallels
+WIN_IP = "10.211.55.3"              # (Fallback) Windows VM on Parallels
 
 # ─── Camera Sources ─────────────────────────────────────────────────────────────
 MAC_CAMERA = 0                                      # Mac: built-in webcam (index 0)
@@ -38,19 +40,20 @@ TARGET_HEIGHT = 0                   # Set to 1920x1080 to downscale for slower n
 # ─── Gesture Detection ──────────────────────────────────────────────────────────
 GRAB_THRESHOLD = 0.35               # Normalized thumb–index distance for "grab"
                                     # Open hand ≈ 0.5+, closed fist ≈ 0.2–0.3
-CATCH_THRESHOLD = 0.55              # Distance ABOVE which hand is "open" (catch)
-PINCH_THRESHOLD = 0.18              # Thumb+index close = pinch (fingers extended)
-PINCH_RELEASE_THRESHOLD = 0.40      # Thumb+index apart after pinch = release/drop
+CATCH_THRESHOLD = 0.45              # Distance ABOVE which hand is "open" (catch)
+PINCH_THRESHOLD = 0.22              # Thumb+index close = pinch (fingers extended)
+PINCH_RELEASE_THRESHOLD = 0.35      # Thumb+index apart after pinch = release/drop
 SWIPE_VELOCITY_THRESHOLD = 0.02     # Min X-velocity (optional)
 SMA_WINDOW = 10                     # Frames for Simple Moving Average
 COOLDOWN_SECONDS = 3.0              # Debounce after a transfer
 
 # ─── Cursor Control ─────────────────────────────────────────────────────────────
-CURSOR_ENABLED = True               # Hand controls the mouse cursor
+CURSOR_ENABLED = False              # Hand controls the mouse cursor
 CURSOR_SMOOTHING = 5                # Frames of position averaging (anti-jitter)
 CURSOR_SPEED = 1.5                  # Cursor speed multiplier
 
 # ─── UI Animation ───────────────────────────────────────────────────────────────
+SHOW_CAMERA_WINDOW = False          # Set to True to see the camera feed and gesture debug info
 ANIMATION_DURATION_MS = 300         # Slide-in duration
 ANIMATION_EASING = "OutQuad"        # QEasingCurve type
 AUTO_DISMISS_SECONDS = 5            # Seconds before fade-out

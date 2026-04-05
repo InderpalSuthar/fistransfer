@@ -36,6 +36,7 @@ from config import (
     HANDSHAKE_TIMEOUT,
     ENABLE_PROFILING,
     CURSOR_ENABLED,
+    SHOW_CAMERA_WINDOW,
 )
 
 # Conditional import — cursor control only works on Mac with pyautogui
@@ -354,16 +355,22 @@ class FisTransferApp:
                 self._show_received_image()
 
                 # ── Display ──────────────────────────────────────────────
-                cv2.imshow(window_name, annotated)
+                if SHOW_CAMERA_WINDOW:
+                    cv2.imshow(window_name, annotated)
 
-                key = cv2.waitKey(1) & 0xFF
-                if key == ord("q"):
-                    break
-                elif key == ord("t"):
-                    self._test_send()
-                elif key == ord("m"):
-                    if self._cursor:
-                        self._cursor.toggle()
+                    key = cv2.waitKey(1) & 0xFF
+                    if key == ord("q"):
+                        break
+                    elif key == ord("t"):
+                        self._test_send()
+                    elif key == ord("m"):
+                        if self._cursor:
+                            self._cursor.toggle()
+                else:
+                    # Provide a minimal delay to allow thread switching if needed
+                    # (cv2.VideoCapture.read() is generally blocking and handles framerate,
+                    # but it's good practice)
+                    time.sleep(0.001)
 
         except KeyboardInterrupt:
             print(f"\n[{self.side}] Interrupted.")

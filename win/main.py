@@ -13,21 +13,17 @@ import multiprocessing
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from shared.app_core import FisTransferApp
-from config import WIN_CAMERA, MAC_IP
+from shared.discovery import discover_peer
+from config import WIN_CAMERA, MAC_IP, DISCOVERY_PORT
 
 
 def main():
     print("\n" + "="*60)
-    print("  FisTransfer Setup")
+    print("  🖥️  FisTransfer Setup (Windows)")
     print("="*60 + "\n")
     
-    # ── Peer IP Setup ──
-    print(f"Default Mac IP: {MAC_IP}")
-    custom_ip = input("Enter Mac IP Address (or press Enter to use default): ").strip()
-    target_ip = custom_ip if custom_ip else MAC_IP
-
     # ── Camera Setup ──
-    print(f"\nDefault Camera: {WIN_CAMERA}")
+    print(f"Default Camera: {WIN_CAMERA}")
     print("  (Type 0 for laptop webcam, 1 for USB cam, or IP URL limit)")
     custom_cam = input("Enter Camera (or press Enter to use default): ").strip()
     
@@ -37,6 +33,11 @@ def main():
         target_cam = int(custom_cam)
     else:
         target_cam = custom_cam
+
+    # ── Peer IP Auto-Discovery ──
+    target_ip = discover_peer("win", DISCOVERY_PORT)
+    if not target_ip:
+        target_ip = MAC_IP
 
     print("\n[OK] Starting FisTransfer...\n")
 
