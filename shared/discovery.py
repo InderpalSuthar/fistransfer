@@ -41,6 +41,19 @@ def discover_peer(my_side, discovery_port, timeout=120.0):
                     data, addr = sock.recvfrom(1024)
                     if data == peer_side:
                         peer_ip = addr[0]
+                        
+                        # Fix for 2-minute hang:
+                        # If we found the peer, they might still be waiting for us.
+                        # Blast a few targeted packets directly to them so they can unlock immediately!
+                        try:
+                            ack_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                            for _ in range(5):
+                                ack_sock.sendto(my_msg, (peer_ip, discovery_port))
+                                time.sleep(0.05)
+                            ack_sock.close()
+                        except Exception:
+                            pass
+                            
                         stop_event.set()
                         break
                 except socket.timeout:
