@@ -109,6 +109,10 @@ class FisTransferApp:
         self._file_from_peer = threading.Event()     # Peer sent FILE_READY
         self._file_accept_from_peer = threading.Event()  # Peer sent FILE_OK
         self._picked_file = None   # FilePicker result when pinch detected
+        
+        self._signal_thread = threading.Thread(target=self._signal_listener, daemon=True)
+        self._transfer_thread = threading.Thread(target=self._transfer_listener, daemon=True)
+        self._heartbeat_thread = threading.Thread(target=self._heartbeat_loop, daemon=True)
 
         # ── Cursor control ──────────────────────────────────────────
         self._cursor = None
@@ -203,6 +207,11 @@ class FisTransferApp:
                             with self._image_lock:
                                 self._received_image = image
                                 self._image_show_time = time.time()
+                            
+                            print(f"✨ [{self.side}] Capture Received Successfully! ({len(img_data)} bytes)")
+                            # Simple console flash/bell
+                            sys.stdout.write("\a")
+                            sys.stdout.flush()
 
                             if ENABLE_PROFILING:
                                 print(f"[{self.side}] 📥 Received {img_size/1024:.1f}KB"
@@ -273,6 +282,20 @@ class FisTransferApp:
     # ═══════════════════════════════════════════════════════════════════════
     # MAIN LOOP
     # ═══════════════════════════════════════════════════════════════════════
+
+    def _heartbeat_loop(self):
+        """
+        Periodically pings the peer to keep the connection alive.
+        """
+        from config import SIGNAL_HEARTBEAT
+        while self._running:
+            if self.peer_ip:
+                try:
+                    with socket.create_connection((self.peer_ip, SIGNAL_PORT), timeout=1.0) as s:
+                        s.sendall(SIGNAL_HEARTBEAT)
+                except:
+                    pass
+            time.sleep(15.0) # Ping every 15s
 
     def run(self):
         print("=" * 60)
